@@ -187,11 +187,30 @@ activate_vg()
 
 setup_mapping()
 {
-	local opts count cryptopen cryptremove NEWROOT
+	local opts count cryptopen cryptremove NEWROOT initrd_cnt
 	opts="$1"
+
+	CRYPTR_LOCAL_BLOCK="/run/cryptroot.local-block"
+	CRYPTR_CNT_FILE="/run/cryptroot.initrd.cnt"
 
 	if [ -z "$opts" ]; then
 		return 0
+	fi
+
+	# We control here the number of re-invocations of this script from
+	# local-block - the heuristic is $ROOTDELAY/3, with a minimum of 30.
+	# This number is somewhat dictated by mdadm, we want to run more times
+	# than that script, to allow decrypting volumes on top of arrays.
+
+	if [ -f "${CRYPTR_CNT_FILE}" ]; then
+		initrd_cnt=$(cat ${CRYPTR_CNT_FILE})
+	else
+		initrd_cnt=${ROOTDELAY:-90}
+		initrd_cnt=$((initrd_cnt/3))
+		if [ "${initrd_cnt}" -lt 30 ]; then
+			initrd_cnt=30
+		fi
+		echo ${initrd_cnt} > "${CRYPTR_CNT_FILE}"
 	fi
 
 	parse_options "$opts" || return 1
@@ -237,28 +256,31 @@ setup_mapping()
 
 	# If the encrypted source device hasn't shown up yet, give it a
 	# little while to deal with removable devices
+	#
+	# We also need to take into account RAID or other devices that may
+	# only be available on local-block stage. So, wait 5 seconds upfront,
+	# in local-top; if that fails, end execution relying on local-block
+	# invocations. Allow $ROOTDELAY/3 invocations with 1s sleep times (with
+	# a minimum of 30 invocations), and if after that we still fail, then it's
+	# really time to give-up. Variable $initrd_cnt tracks the re-invocations.
+	#
+	# Part of the lines below has been taken from initramfs-tools
+	# scripts/local's local_device_setup(), as suggested per
+	# https://launchpad.net/bugs/164044 .
 
-	# the following lines below have been taken from
-	# /usr/share/initramfs-tools/scripts/local, as suggested per
-	# https://launchpad.net/bugs/164044
 	if [ ! -e "$cryptsource" ]; then
 		log_begin_msg "Waiting for encrypted source device..."
 
-		# Default delay is 180s
-		if [ -z "${ROOTDELAY}" ]; then
-			slumber=180
-		else
-			slumber=${ROOTDELAY}
+		local slumber=1
+		if [ ! -f "${CRYPTR_LOCAL_BLOCK}" ]; then
+			# we are running on local-top
+			slumber=5
 		fi
 
-		slumber=$(( ${slumber} * 10 ))
 		while [ ! -e "$cryptsource" ]; do
-			# retry for LVM devices every 10 seconds
-			if [ ${slumber} -eq $(( ${slumber}/100*100 )) ]; then
-				activate_vg
-			fi
+			activate_vg
+			/bin/sleep 1
 
-			/bin/sleep 0.1
 			slumber=$(( ${slumber} - 1 ))
 			[ ${slumber} -gt 0 ] || break
 		done
@@ -273,11 +295,17 @@ setup_mapping()
 
 	# We've given up, but we'll let the user fix matters if they can
 	if [ ! -e "${cryptsource}" ]; then
-		
-		echo "  ALERT! ${cryptsource} does not exist."
-		echo "	Check cryptopts=source= bootarg: cat /proc/cmdline"
-		echo "	or missing modules, devices: cat /proc/modules; ls /dev"
-		panic -r "Dropping to a shell. Will skip ${cryptsource} if you can't fix."
+		if [ ${initrd_cnt} -le 0 ]; then
+			echo "  ALERT! ${cryptsource} does not exist."
+			echo "	Check cryptopts=source= bootarg: cat /proc/cmdline"
+			echo "	or missing modules, devices: cat /proc/modules; ls /dev"
+			panic -r "Dropping to a shell. Will skip ${cryptsource} if you can't fix."
+		else
+			initrd_cnt=$((initrd_cnt - 1))
+			echo ${initrd_cnt} > "${CRYPTR_CNT_FILE}"
+			return 0 # allow some attempts on local-block stage
+		fi
+
 	fi
 
 	if [ ! -e "${cryptsource}" ]; then
@@ -383,6 +411,11 @@ setup_mapping()
 
 	if [ "$cryptrootdev" = "yes" ] && [ $crypttries -gt 0 ] && [ $count -ge $crypttries ]; then
 		message "cryptsetup ($crypttarget): maximum number of tries exceeded"
+
+		if [ -f "${CRYPTR_CNT_FILE}" ]; then
+			echo 0 > "${CRYPTR_CNT_FILE}"
+		fi
+
 		message "cryptsetup: going to sleep for $failsleep seconds..."
 		sleep $failsleep
 		exit 1

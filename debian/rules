@@ -156,6 +156,8 @@ install-stamp: build-stamp
 		$(CURDIR)/debian/cryptsetup/usr/share/initramfs-tools/scripts/local-top/cryptroot
 	install -m 0755 debian/initramfs/cryptroot-script-block \
 		$(CURDIR)/debian/cryptsetup/usr/share/initramfs-tools/scripts/local-block/cryptroot
+	install -m 0755 debian/initramfs/cryptroot-script-bottom \
+		$(CURDIR)/debian/cryptsetup/usr/share/initramfs-tools/scripts/local-bottom/cryptroot
 	install -m 0644 debian/cryptdisks.bash_completion \
 		$(CURDIR)/debian/cryptsetup/usr/share/bash-completion/completions/cryptdisks
 	install -m 0755 debian/cryptsetup.bug-script \

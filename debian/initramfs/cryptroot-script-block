@@ -16,5 +16,6 @@ prereqs)
 esac
 
 if [ -x /scripts/local-top/cryptroot ]; then
+	touch "/run/cryptroot.local-block"
 	exec /scripts/local-top/cryptroot
 fi

@@ -1,3 +1,26 @@
+cryptsetup (2:2.0.2-1ubuntu1.2) bionic; urgency=medium
+
+  * Introduce retry logic for external invocations after mdadm (LP: #1879980)
+    - Currently, if an encrypted rootfs is configured on top of a MD RAID1
+      array and such array gets degraded (e.g., a member is removed/failed)
+      the cryptsetup scripts cannot mount the rootfs, and the boot fails.
+      We fix that issue here by allowing the cryptroot script to be re-run
+      by initramfs-tools/local-block stage, as mdadm can activate degraded
+      arrays at that stage.
+      There is an initramfs-tools counter-part for this fix, but alone the
+      cryptsetup portion is harmless.
+    - d/i/cryptroot-script: set files used by cryptsetup/initramfs-tools
+      (flag that local-block is running and external invocation counter);
+      change logic from just wait 180 seconds / activating LVM every 10
+      seconds to waiting 5 seconds first, then allowing initramfs-tools
+      to run mdadm (to activate degraded arrays) and call back at least
+      30 times/seconds more / activating LVM every 1 second.
+    - d/i/cryptroot-script-block: set flag that local-block is running.
+    - d/i/cryptroot-script-bottom: clean up the flag and counter files.
+    - d/rules: ship the new local-bottom script.
+
+ -- Guilherme G. Piccoli <gpiccoli@canonical.com>  Mon, 03 Aug 2020 18:28:48 -0300
+
 cryptsetup (2:2.0.2-1ubuntu1.1) bionic-proposed; urgency=medium
 
   * SRU

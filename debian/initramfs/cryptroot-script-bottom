@@ -1,0 +1,20 @@
+#!/bin/sh
+set +x
+PREREQ=""
+
+prereqs()
+{
+	echo "$PREREQ"
+}
+
+case $1 in
+prereqs)
+	prereqs
+	exit 0
+	;;
+esac
+
+# If we reached this stage, we do have a rootfs mounted
+# so let's clean-up cryptroot setup mess...
+rm -f "/run/cryptroot.local-block"
+rm -f "/run/cryptroot.initrd.cnt"
